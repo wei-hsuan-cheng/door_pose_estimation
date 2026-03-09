@@ -1,0 +1,13 @@
+# Goal
+geometry_msgs/TransformStamped door_panel_tf
+
+---
+# Result
+bool success
+string message
+geometry_msgs/TransformStamped door_handle_tf
+geometry_msgs/TransformStamped door_hinge_tf
+
+---
+# Feedback
+string status
