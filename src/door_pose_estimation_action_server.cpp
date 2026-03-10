@@ -1,6 +1,10 @@
-#include <array>
+#include <exception>
 #include <functional>
+#include <set>
+#include <limits>
+#include <map>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <utility>
@@ -24,14 +28,18 @@ public:
 
   explicit DoorPoseEstimationActionServer(const rclcpp::NodeOptions & options = rclcpp::NodeOptions())
   : Node("door_pose_estimation_action_server", options),
-    action_name_(this->declare_parameter<std::string>("action_name", "estimate_door_poses")),
     tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this)) {
-    this->declare_parameter<std::string>("door_handle_frame_id", "door_handle");
-    this->declare_parameter<std::string>("door_hinge_frame_id", "door_hinge");
-    this->declare_parameter<bool>("broadcast_result_tf", false);
-
-    declareOffsetParameters("door_handle_offset", {0.0, -0.35, 0.0}, {0.0, 0.0, 0.0});
-    declareOffsetParameters("door_hinge_offset", {0.0, 0.45, 0.0}, {0.0, 0.0, 0.0});
+    declareParameterIfMissing<std::string>("action_name", "estimate_door_poses");
+    declareParameterIfMissing<std::string>("door_handle_frame_id", "door_handle");
+    declareParameterIfMissing<std::string>("door_hinge_frame_id", "door_hinge");
+    declareParameterIfMissing<bool>("broadcast_result_tf", false);
+    declareParameterIfMissing<std::vector<std::string>>(
+      "generated_frame_ids", std::vector<std::string>{"door_handle", "door_hinge"});
+    declareParameterIfMissing<std::vector<double>>(
+      "generated_frames.door_handle.pose", std::vector<double>{0.0, -0.35, 0.0, 0.0, 0.0, 0.0});
+    declareParameterIfMissing<std::vector<double>>(
+      "generated_frames.door_hinge.pose", std::vector<double>{0.0, 0.45, 0.0, 0.0, 0.0, 0.0});
+    action_name_ = this->get_parameter("action_name").as_string();
 
     action_server_ = rclcpp_action::create_server<EstimateDoorPoses>(
       this,
@@ -44,31 +52,70 @@ public:
   }
 
 private:
-  void declareOffsetParameters(
-    const std::string & prefix,
-    const std::array<double, 3> & translation_defaults,
-    const std::array<double, 3> & rpy_defaults) {
-    this->declare_parameter<double>(prefix + ".translation.x", translation_defaults[0]);
-    this->declare_parameter<double>(prefix + ".translation.y", translation_defaults[1]);
-    this->declare_parameter<double>(prefix + ".translation.z", translation_defaults[2]);
-    this->declare_parameter<double>(prefix + ".rotation.roll", rpy_defaults[0]);
-    this->declare_parameter<double>(prefix + ".rotation.pitch", rpy_defaults[1]);
-    this->declare_parameter<double>(prefix + ".rotation.yaw", rpy_defaults[2]);
+  template <typename ParameterT>
+  void declareParameterIfMissing(const std::string & name, const ParameterT & default_value) {
+    if (!this->has_parameter(name)) {
+      this->declare_parameter<ParameterT>(name, default_value);
+    }
   }
 
-  tf2::Transform readRelativeTransform(const std::string & prefix) const {
-    const double x = this->get_parameter(prefix + ".translation.x").as_double();
-    const double y = this->get_parameter(prefix + ".translation.y").as_double();
-    const double z = this->get_parameter(prefix + ".translation.z").as_double();
-    const double roll = this->get_parameter(prefix + ".rotation.roll").as_double();
-    const double pitch = this->get_parameter(prefix + ".rotation.pitch").as_double();
-    const double yaw = this->get_parameter(prefix + ".rotation.yaw").as_double();
+  struct FrameConfig {
+    std::string frame_id;
+    tf2::Transform relative_transform;
+  };
+
+  tf2::Transform parsePose(const std::vector<double> & pose, const std::string & parameter_name) const {
+    if (pose.size() != 6 && pose.size() != 7) {
+      std::ostringstream error;
+      error << "Parameter '" << parameter_name
+            << "' must contain 6 values [x, y, z, thz, thy, thx] or 7 values "
+               "[x, y, z, qw, qx, qy, qz], but got "
+            << pose.size() << ".";
+      throw std::runtime_error(error.str());
+    }
 
     tf2::Quaternion rotation;
-    rotation.setRPY(roll, pitch, yaw);
-    rotation.normalize();
+    if (pose.size() == 6) {
+      rotation.setRPY(pose[5], pose[4], pose[3]);
+    } else {
+      rotation = tf2::Quaternion(pose[4], pose[5], pose[6], pose[3]);
+    }
 
-    return tf2::Transform(rotation, tf2::Vector3(x, y, z));
+    if (rotation.length2() <= std::numeric_limits<double>::epsilon()) {
+      throw std::runtime_error("Pose rotation must not be a zero-length quaternion.");
+    }
+
+    rotation.normalize();
+    return tf2::Transform(rotation, tf2::Vector3(pose[0], pose[1], pose[2]));
+  }
+
+  std::vector<FrameConfig> readGeneratedFrames() const {
+    const auto frame_ids = this->get_parameter("generated_frame_ids").as_string_array();
+    if (frame_ids.empty()) {
+      throw std::runtime_error("Parameter 'generated_frame_ids' must contain at least one frame.");
+    }
+    if (std::set<std::string>(frame_ids.begin(), frame_ids.end()).size() != frame_ids.size()) {
+      throw std::runtime_error("Parameter 'generated_frame_ids' must not contain duplicates.");
+    }
+
+    std::vector<FrameConfig> frame_configs;
+    frame_configs.reserve(frame_ids.size());
+
+    for (const auto & frame_id : frame_ids) {
+      if (frame_id.empty()) {
+        throw std::runtime_error("Parameter 'generated_frame_ids' must not contain empty frame IDs.");
+      }
+
+      const auto parameter_name = "generated_frames." + frame_id + ".pose";
+      std::vector<double> pose;
+      if (!this->get_parameter(parameter_name, pose)) {
+        throw std::runtime_error("Missing required parameter '" + parameter_name + "'.");
+      }
+
+      frame_configs.push_back(FrameConfig{frame_id, parsePose(pose, parameter_name)});
+    }
+
+    return frame_configs;
   }
 
   geometry_msgs::msg::TransformStamped composeTransform(
@@ -87,15 +134,13 @@ private:
   rclcpp_action::GoalResponse handleGoal(
     const rclcpp_action::GoalUUID &,
     std::shared_ptr<const EstimateDoorPoses::Goal> goal) {
-    const auto & door_panel_tf = goal->door_panel_tf;
-
-    if (door_panel_tf.header.frame_id.empty()) {
-      RCLCPP_WARN(this->get_logger(), "Rejecting goal: door_panel_tf.header.frame_id is empty.");
+    if (goal->parent_frame_id.empty()) {
+      RCLCPP_WARN(this->get_logger(), "Rejecting goal: parent_frame_id is empty.");
       return rclcpp_action::GoalResponse::REJECT;
     }
 
-    if (door_panel_tf.child_frame_id.empty()) {
-      RCLCPP_WARN(this->get_logger(), "Rejecting goal: door_panel_tf.child_frame_id is empty.");
+    if (goal->child_frame_id.empty()) {
+      RCLCPP_WARN(this->get_logger(), "Rejecting goal: child_frame_id is empty.");
       return rclcpp_action::GoalResponse::REJECT;
     }
 
@@ -114,6 +159,7 @@ private:
     const auto goal = goal_handle->get_goal();
     auto result = std::make_shared<EstimateDoorPoses::Result>();
     auto feedback = std::make_shared<EstimateDoorPoses::Feedback>();
+    geometry_msgs::msg::TransformStamped door_panel_tf;
 
     feedback->status = "COMPUTING";
     goal_handle->publish_feedback(feedback);
@@ -126,20 +172,48 @@ private:
     }
 
     try {
+      door_panel_tf.header.frame_id = goal->parent_frame_id;
+      door_panel_tf.header.stamp = this->now();
+      door_panel_tf.child_frame_id = goal->child_frame_id;
+      door_panel_tf.transform = goal->transform;
+
       const auto handle_frame_id = this->get_parameter("door_handle_frame_id").as_string();
       const auto hinge_frame_id = this->get_parameter("door_hinge_frame_id").as_string();
       const bool broadcast_result_tf = this->get_parameter("broadcast_result_tf").as_bool();
+      const auto generated_frames = readGeneratedFrames();
+      std::vector<geometry_msgs::msg::TransformStamped> composed_transforms;
+      composed_transforms.reserve(generated_frames.size());
+      std::map<std::string, geometry_msgs::msg::TransformStamped> composed_transform_map;
 
-      result->door_handle_tf =
-        composeTransform(goal->door_panel_tf, readRelativeTransform("door_handle_offset"), handle_frame_id);
-      result->door_hinge_tf =
-        composeTransform(goal->door_panel_tf, readRelativeTransform("door_hinge_offset"), hinge_frame_id);
+      for (const auto & generated_frame : generated_frames) {
+        auto composed_transform = composeTransform(
+          door_panel_tf, generated_frame.relative_transform, generated_frame.frame_id);
+        composed_transform_map[generated_frame.frame_id] = composed_transform;
+        composed_transforms.push_back(std::move(composed_transform));
+      }
+
+      const auto handle_it = composed_transform_map.find(handle_frame_id);
+      if (handle_it == composed_transform_map.end()) {
+        throw std::runtime_error(
+          "Configured door_handle_frame_id '" + handle_frame_id +
+          "' is not present in generated_frame_ids.");
+      }
+
+      const auto hinge_it = composed_transform_map.find(hinge_frame_id);
+      if (hinge_it == composed_transform_map.end()) {
+        throw std::runtime_error(
+          "Configured door_hinge_frame_id '" + hinge_frame_id +
+          "' is not present in generated_frame_ids.");
+      }
+
+      result->door_handle = handle_it->second;
+      result->door_hinge = hinge_it->second;
       result->success = true;
-      result->message = "Door handle and hinge transforms computed successfully.";
+      result->message =
+        "Generated " + std::to_string(composed_transforms.size()) + " transform(s) from the door panel frame.";
 
       if (broadcast_result_tf) {
-        tf_broadcaster_->sendTransform(
-          std::vector<geometry_msgs::msg::TransformStamped>{result->door_handle_tf, result->door_hinge_tf});
+        tf_broadcaster_->sendTransform(composed_transforms);
       }
 
       feedback->status = "SUCCEEDED";
@@ -159,7 +233,9 @@ private:
 
 int main(int argc, char ** argv) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<DoorPoseEstimationActionServer>());
+  rclcpp::NodeOptions options;
+  options.automatically_declare_parameters_from_overrides(true);
+  rclcpp::spin(std::make_shared<DoorPoseEstimationActionServer>(options));
   rclcpp::shutdown();
   return 0;
 }

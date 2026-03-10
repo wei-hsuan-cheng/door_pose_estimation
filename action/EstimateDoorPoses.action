@@ -1,12 +1,14 @@
 # Goal
-geometry_msgs/TransformStamped door_panel_tf
+string parent_frame_id
+string child_frame_id
+geometry_msgs/Transform transform
 
 ---
 # Result
 bool success
 string message
-geometry_msgs/TransformStamped door_handle_tf
-geometry_msgs/TransformStamped door_hinge_tf
+geometry_msgs/TransformStamped door_handle
+geometry_msgs/TransformStamped door_hinge
 
 ---
 # Feedback

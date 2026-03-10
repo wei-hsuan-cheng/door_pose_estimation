@@ -31,31 +31,50 @@ colcon build --symlink-install \
 ros2 launch door_pose_estimation door_pose_estimation.launch.py
 
 ros2 action send_goal /estimate_door_poses door_pose_estimation/action/EstimateDoorPoses \
-"{door_panel_tf: 
-    {header: 
-        {frame_id: world}, 
-        child_frame_id: door_panel, 
-        transform: 
-            {
-            translation: {x: 1.0, y: 0.5, z: 0.0}, rotation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
-            }
-    }
- }"
+"{
+  parent_frame_id: world,
+  child_frame_id: door_panel,
+  transform: {
+    translation: {x: 1.0, y: 0.5, z: 0.0},
+    rotation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}
+  }
+}"
 ```
 
-The action goal contains one `geometry_msgs/TransformStamped` for the detected
-door panel frame. The server composes that transform with configurable
-panel-to-handle and panel-to-hinge offsets, then returns the resulting
-`door_handle_tf` and `door_hinge_tf` in the action result.
+The action goal contains the `parent_frame_id`, `child_frame_id`, and
+`transform` fields for the detected door panel frame. The server stamps the
+generated transforms with its current node time, composes that transform with a
+configurable list of panel-relative frame poses, broadcasts all configured
+outputs, and returns `door_handle` and `door_hinge` in the action result.
 
-Tune these parameters to match your frame convention:
+## Configuration
 
-- `door_handle_offset.translation.{x,y,z}`
-- `door_handle_offset.rotation.{roll,pitch,yaw}`
-- `door_hinge_offset.translation.{x,y,z}`
-- `door_hinge_offset.rotation.{roll,pitch,yaw}`
-- `door_handle_frame_id`
-- `door_hinge_frame_id`
-- `broadcast_result_tf`
+The package now loads its generated frame definitions from
+`config/door_params.yaml`.
 
+Use these parameters to control the output:
 
+ - `generated_frame_ids`: ordered list of child frames to generate from the input door panel transform
+- `generated_frames.<frame_id>.pose`: panel-to-frame pose
+- `door_handle_frame_id`: which generated frame should populate `door_handle`
+- `door_hinge_frame_id`: which generated frame should populate `door_hinge`
+- `broadcast_result_tf`: whether to publish all generated transforms on TF
+
+Supported pose formats for each `generated_frames.<frame_id>.pose` entry:
+
+- 6 values: `[x, y, z, thz, thy, thx]`
+- 7 values: `[x, y, z, qw, qx, qy, qz]`
+
+Example:
+
+```yaml
+door_pose_estimation_action_server:
+  ros__parameters:
+    broadcast_result_tf: true
+    door_handle_frame_id: door_handle
+    door_hinge_frame_id: door_hinge
+    generated_frame_ids: [door_handle, door_hinge, door_lock]
+    generated_frames.door_handle.pose: [0.0, -0.35, 0.0, 0.0, 0.0, 0.0]
+    generated_frames.door_hinge.pose: [0.0, 0.45, 0.0, 0.0, 0.0, 0.0]
+    generated_frames.door_lock.pose: [0.0, -0.10, 0.9, 1.0, 0.0, 0.0, 0.0]
+```

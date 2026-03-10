@@ -46,7 +46,7 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY action launch
+install(DIRECTORY action launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
