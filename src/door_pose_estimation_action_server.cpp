@@ -36,9 +36,9 @@ public:
     declareParameterIfMissing<std::vector<std::string>>(
       "generated_frame_ids", std::vector<std::string>{"door_handle", "door_hinge"});
     declareParameterIfMissing<std::vector<double>>(
-      "generated_frames.door_handle.pose", std::vector<double>{0.0, -0.35, 0.0, 0.0, 0.0, 0.0});
+      "generated_frames.door_handle.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     declareParameterIfMissing<std::vector<double>>(
-      "generated_frames.door_hinge.pose", std::vector<double>{0.0, 0.45, 0.0, 0.0, 0.0, 0.0});
+      "generated_frames.door_hinge.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     action_name_ = this->get_parameter("action_name").as_string();
 
     action_server_ = rclcpp_action::create_server<EstimateDoorPoses>(

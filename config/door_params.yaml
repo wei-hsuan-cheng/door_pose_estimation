@@ -14,5 +14,5 @@ door_pose_estimation_action_server:
     # Pose formats:
     # - 6 values: [x, y, z, thz, thy, thx]
     # - 7 values: [x, y, z, qw, qx, qy, qz]
-    generated_frames.door_handle.pose: [0.0, -0.35, 0.0, 0.0, 0.0, 0.0]
-    generated_frames.door_hinge.pose: [0.0, 0.45, 0.0, 0.0, 0.0, 0.0]
+    generated_frames.door_handle.pose: [0.3, 0.1, 0.05, 0.0, 0.0, 0.0]
+    generated_frames.door_hinge.pose: [-0.5, 1.055, 0.0, 0.0, 0.0, 1.5708]
