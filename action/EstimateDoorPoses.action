@@ -8,6 +8,7 @@ geometry_msgs/Transform transform
 bool success
 string message
 geometry_msgs/TransformStamped door_handle
+geometry_msgs/TransformStamped handle_interaction
 geometry_msgs/TransformStamped door_hinge
 
 ---

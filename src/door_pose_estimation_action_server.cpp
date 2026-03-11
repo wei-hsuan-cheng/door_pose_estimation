@@ -31,12 +31,15 @@ public:
     tf_broadcaster_(std::make_unique<tf2_ros::TransformBroadcaster>(*this)) {
     declareParameterIfMissing<std::string>("action_name", "estimate_door_poses");
     declareParameterIfMissing<std::string>("door_handle_frame_id", "door_handle");
+    declareParameterIfMissing<std::string>("handle_interaction_frame_id", "handle_interaction");
     declareParameterIfMissing<std::string>("door_hinge_frame_id", "door_hinge");
     declareParameterIfMissing<bool>("broadcast_result_tf", false);
     declareParameterIfMissing<std::vector<std::string>>(
-      "generated_frame_ids", std::vector<std::string>{"door_handle", "door_hinge"});
+      "generated_frame_ids", std::vector<std::string>{"door_handle", "handle_interaction", "door_hinge"});
     declareParameterIfMissing<std::vector<double>>(
       "generated_frames.door_handle.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    declareParameterIfMissing<std::vector<double>>(
+      "generated_frames.handle_interaction.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     declareParameterIfMissing<std::vector<double>>(
       "generated_frames.door_hinge.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     action_name_ = this->get_parameter("action_name").as_string();
@@ -178,6 +181,8 @@ private:
       door_panel_tf.transform = goal->transform;
 
       const auto handle_frame_id = this->get_parameter("door_handle_frame_id").as_string();
+      const auto handle_interaction_frame_id =
+        this->get_parameter("handle_interaction_frame_id").as_string();
       const auto hinge_frame_id = this->get_parameter("door_hinge_frame_id").as_string();
       const bool broadcast_result_tf = this->get_parameter("broadcast_result_tf").as_bool();
       const auto generated_frames = readGeneratedFrames();
@@ -199,6 +204,13 @@ private:
           "' is not present in generated_frame_ids.");
       }
 
+      const auto handle_interaction_it = composed_transform_map.find(handle_interaction_frame_id);
+      if (handle_interaction_it == composed_transform_map.end()) {
+        throw std::runtime_error(
+          "Configured handle_interaction_frame_id '" + handle_interaction_frame_id +
+          "' is not present in generated_frame_ids.");
+      }
+
       const auto hinge_it = composed_transform_map.find(hinge_frame_id);
       if (hinge_it == composed_transform_map.end()) {
         throw std::runtime_error(
@@ -207,6 +219,7 @@ private:
       }
 
       result->door_handle = handle_it->second;
+      result->handle_interaction = handle_interaction_it->second;
       result->door_hinge = hinge_it->second;
       result->success = true;
       result->message =
