@@ -33,15 +33,19 @@ public:
     declareParameterIfMissing<std::string>("door_handle_frame_id", "door_handle");
     declareParameterIfMissing<std::string>("handle_interaction_frame_id", "handle_interaction");
     declareParameterIfMissing<std::string>("door_hinge_frame_id", "door_hinge");
+    declareParameterIfMissing<std::string>("door_end_base_frame_id", "door_end_base");
     declareParameterIfMissing<bool>("broadcast_result_tf", false);
     declareParameterIfMissing<std::vector<std::string>>(
-      "generated_frame_ids", std::vector<std::string>{"door_handle", "handle_interaction", "door_hinge"});
+      "generated_frame_ids",
+      std::vector<std::string>{"door_handle", "handle_interaction", "door_hinge", "door_end_base"});
     declareParameterIfMissing<std::vector<double>>(
       "generated_frames.door_handle.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     declareParameterIfMissing<std::vector<double>>(
       "generated_frames.handle_interaction.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
     declareParameterIfMissing<std::vector<double>>(
       "generated_frames.door_hinge.pose", std::vector<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
+    declareParameterIfMissing<std::vector<double>>(
+      "generated_frames.door_end_base.pose", std::vector<double>{0.0, 1.055, -0.5, 0.0, 0.0, 0.0});
     action_name_ = this->get_parameter("action_name").as_string();
 
     action_server_ = rclcpp_action::create_server<EstimateDoorPoses>(
@@ -184,6 +188,7 @@ private:
       const auto handle_interaction_frame_id =
         this->get_parameter("handle_interaction_frame_id").as_string();
       const auto hinge_frame_id = this->get_parameter("door_hinge_frame_id").as_string();
+      const auto door_end_base_frame_id = this->get_parameter("door_end_base_frame_id").as_string();
       const bool broadcast_result_tf = this->get_parameter("broadcast_result_tf").as_bool();
       const auto generated_frames = readGeneratedFrames();
       std::vector<geometry_msgs::msg::TransformStamped> composed_transforms;
@@ -218,9 +223,17 @@ private:
           "' is not present in generated_frame_ids.");
       }
 
+      const auto door_end_base_it = composed_transform_map.find(door_end_base_frame_id);
+      if (door_end_base_it == composed_transform_map.end()) {
+        throw std::runtime_error(
+          "Configured door_end_base_frame_id '" + door_end_base_frame_id +
+          "' is not present in generated_frame_ids.");
+      }
+
       result->door_handle = handle_it->second;
       result->handle_interaction = handle_interaction_it->second;
       result->door_hinge = hinge_it->second;
+      result->door_end_base = door_end_base_it->second;
       result->success = true;
       result->message =
         "Generated " + std::to_string(composed_transforms.size()) + " transform(s) from the door panel frame.";

@@ -7,11 +7,13 @@ door_pose_estimation_action_server:
     door_handle_frame_id: door_handle
     handle_interaction_frame_id: handle_interaction
     door_hinge_frame_id: door_hinge
+    door_end_base_frame_id: door_end_base
 
     generated_frame_ids:
       - door_handle
       - handle_interaction
       - door_hinge
+      - door_end_base
 
     # Pose formats:
     # - 6 values: [x, y, z, thz, thy, thx]
@@ -19,3 +21,4 @@ door_pose_estimation_action_server:
     generated_frames.door_handle.pose: [0.375, 0.1, 0.05, 0.0, 0.0, 0.0]
     generated_frames.handle_interaction.pose: [0.3, 0.06, 0.07, 0.0, 3.14159, 0.0]
     generated_frames.door_hinge.pose: [-0.435, 1.055, 0.0, 0.0, 0.0, 1.5708]
+    generated_frames.door_end_base.pose: [0.0, 1.055, -0.5, 0.0, 0.0, 0.0]
